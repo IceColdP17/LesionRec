@@ -389,7 +389,7 @@ export const ImageUpload = ({ userId, onAnalysisComplete }: ImageUploadProps) =>
                                     console.log(`📹 Video canplay event: ${video.videoWidth}x${video.videoHeight}`);
                                     console.log(`   readyState: ${video.readyState}`);
                                 }}
-                                onPlay={(e) => {
+                                onPlay={() => {
                                     console.log(`📹 Video play event fired`);
                                 }}
                                 onError={(e) => {

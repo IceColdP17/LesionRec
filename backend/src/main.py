@@ -12,6 +12,7 @@ from dotenv import load_dotenv      # To load environment variables from a .env 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form  # FastAPI for API (Web Framework)
 from fastapi.middleware.cors import CORSMiddleware      # For security rules for browser requests
 from pydantic import BaseModel      # For request body validation
+from typing import Optional, List   # For type hints
 import boto3                        # AWS SDK (For S3 and Auth)
 
 # Our Local Modules
@@ -19,6 +20,7 @@ from src.services.privacy import scrub_image_metadata
 from src.services.analysis import perform_ensemble_analysis
 from src.services.product_recommender import ProductRecommender
 from src.services.image_processor import ImageProcessor
+from src.services.chatbot import SkinHealthChatbot
 
 # ---- Configuration -------
 # Set up the logger. "INFO" just means show me everything important
@@ -43,6 +45,14 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize ProductRecommender: {e}")
     recommender = None
+
+# Initialize Chatbot with error handling
+try:
+    chatbot = SkinHealthChatbot()
+    logger.info("✓ SkinHealthChatbot initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize SkinHealthChatbot: {e}")
+    chatbot = None
 
 # ---- Security (CORS) ----
 # **Browsers block requests from different ports 5173 and 8000 by default**
@@ -253,6 +263,15 @@ class RecommendationRequest(BaseModel):
     analysis_text: str
     budget_max: Optional[float] = None
 
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class ChatRequest(BaseModel):
+    user_id: str
+    message: str
+    conversation_history: Optional[List[ChatMessage]] = None
+
 @app.post("/recommend")
 async def get_recommendations(request: RecommendationRequest):
     """
@@ -271,3 +290,43 @@ async def get_recommendations(request: RecommendationRequest):
     except Exception as e:
         logger.error(f"Recommendation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    """
+    Chat endpoint for skin health Q&A
+    
+    Args:
+        user_id: User identifier
+        message: User's message/question
+        conversation_history: Optional conversation history for context
+    
+    Returns:
+        Response from the AI chatbot
+    """
+    if not chatbot:
+        raise HTTPException(status_code=503, detail="Chatbot service unavailable")
+    
+    try:
+        logger.info(f"Chat request from user {request.user_id}: {request.message[:100]}...")
+        
+        # Convert ChatMessage objects to dict format for chatbot
+        history = None
+        if request.conversation_history:
+            history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in request.conversation_history
+            ]
+        
+        # Get response from chatbot
+        response = chatbot.chat(request.message, history)
+        
+        logger.info("Chat response generated successfully")
+        return {
+            "response": response,
+            "user_id": request.user_id
+        }
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
